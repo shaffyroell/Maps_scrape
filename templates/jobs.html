@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lead Scraper — Job History</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      background: #f3f4f6;
+      color: #111;
+      min-height: 100vh;
+    }
+    header {
+      background: #fff;
+      border-bottom: 1px solid #e5e7eb;
+      padding: 14px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header h1 { font-size: 18px; font-weight: 700; }
+    header nav a {
+      margin-left: 20px;
+      font-size: 14px;
+      color: #4f46e5;
+      text-decoration: none;
+    }
+    header nav a:hover { text-decoration: underline; }
+
+    .container { max-width: 1200px; margin: 36px auto; padding: 0 24px; }
+    .card {
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .card-header h2 { font-size: 16px; font-weight: 600; color: #374151; }
+
+    .empty {
+      padding: 48px 24px;
+      text-align: center;
+      color: #9ca3af;
+      font-size: 15px;
+    }
+
+    /* Table */
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th {
+      text-align: left;
+      padding: 11px 14px;
+      background: #f9fafb;
+      border-bottom: 1px solid #e5e7eb;
+      font-weight: 600;
+      color: #374151;
+      white-space: nowrap;
+    }
+    td {
+      padding: 11px 14px;
+      border-bottom: 1px solid #f3f4f6;
+      color: #374151;
+      vertical-align: middle;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr.clickable { cursor: pointer; }
+    tr.clickable:hover td { background: #f9fafb; }
+
+    .badge {
+      display: inline-block;
+      padding: 3px 9px;
+      border-radius: 99px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .badge-done    { background: #dcfce7; color: #166534; }
+    .badge-running { background: #fef9c3; color: #854d0e; }
+    .badge-failed  { background: #fee2e2; color: #991b1b; }
+
+    .btn-dl {
+      display: inline-block;
+      padding: 5px 14px;
+      background: #4f46e5;
+      color: #fff;
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .btn-dl:hover { background: #4338ca; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Lead Scraper</h1>
+  <nav>
+    <a href="/">New Job</a>
+    <a href="/logout">Logout</a>
+  </nav>
+</header>
+
+<div class="container">
+  <div class="card">
+    <div class="card-header">
+      <h2>Job History</h2>
+    </div>
+
+    {% if not jobs %}
+    <div class="empty">No jobs yet. <a href="/" style="color:#4f46e5;">Run your first scrape.</a></div>
+    {% else %}
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Started</th>
+            <th>Query</th>
+            <th>Cities Submitted</th>
+            <th>Succeeded</th>
+            <th>Failed</th>
+            <th>Raw Leads</th>
+            <th>Unique Leads</th>
+            <th>Dupes Removed</th>
+            <th>Runtime</th>
+            <th>Status</th>
+            <th>Download</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for job in jobs %}
+          <tr
+            {% if job.status == 'running' %}
+            class="clickable"
+            onclick="window.location='/?job_id={{ job.job_id }}'"
+            title="Click to view live progress"
+            {% endif %}
+          >
+            <td style="white-space:nowrap;">
+              {{ job.started_at[:16].replace('T', ' ') if job.started_at else '—' }}
+            </td>
+            <td><b>{{ job.query }}</b></td>
+            <td style="text-align:right;">{{ job.cities_submitted }}</td>
+            <td style="text-align:right;">{{ job.cities_succeeded }}</td>
+            <td style="text-align:right;">{{ job.cities_failed }}</td>
+            <td style="text-align:right;">{{ job.total_before_dedup }}</td>
+            <td style="text-align:right;">{{ job.total_after_dedup }}</td>
+            <td style="text-align:right;">{{ job.total_duplicates_removed }}</td>
+            <td style="white-space:nowrap;">{{ job.runtime or '—' }}</td>
+            <td>
+              {% if job.status == 'done' %}
+                <span class="badge badge-done">Done</span>
+              {% elif job.status == 'running' %}
+                <span class="badge badge-running">Running</span>
+              {% else %}
+                <span class="badge badge-failed">Failed</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if job.status == 'done' %}
+                <a class="btn-dl" href="/download/{{ job.job_id }}">Download</a>
+              {% else %}
+                —
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+</body>
+</html>

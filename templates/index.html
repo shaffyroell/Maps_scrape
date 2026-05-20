@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lead Scraper</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      background: #f3f4f6;
+      color: #111;
+      min-height: 100vh;
+    }
+    header {
+      background: #fff;
+      border-bottom: 1px solid #e5e7eb;
+      padding: 14px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header h1 { font-size: 18px; font-weight: 700; }
+    header nav a {
+      margin-left: 20px;
+      font-size: 14px;
+      color: #4f46e5;
+      text-decoration: none;
+    }
+    header nav a:hover { text-decoration: underline; }
+    .container { max-width: 900px; margin: 36px auto; padding: 0 24px; }
+
+    /* ---- Form ---- */
+    .card {
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+      padding: 32px;
+      margin-bottom: 28px;
+    }
+    .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 20px; color: #374151; }
+    label { display: block; font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 5px; }
+    input[type="text"], input[type="number"], textarea {
+      display: block;
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 14px;
+      color: #111;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input[type="text"]:focus, input[type="number"]:focus, textarea:focus { border-color: #4f46e5; }
+    textarea { font-family: 'SFMono-Regular', Consolas, monospace; resize: vertical; }
+    .form-row { margin-bottom: 18px; }
+    .btn-run {
+      padding: 11px 28px;
+      background: #4f46e5;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-run:hover { background: #4338ca; }
+    .btn-run:disabled { background: #9ca3af; cursor: not-allowed; }
+
+    /* ---- Job view ---- */
+    .job-meta {
+      font-size: 13px;
+      color: #6b7280;
+      margin-bottom: 20px;
+    }
+    .job-meta span { font-weight: 600; color: #111; }
+
+    /* Progress bar */
+    .progress-wrap {
+      background: #e5e7eb;
+      border-radius: 99px;
+      height: 10px;
+      margin-bottom: 8px;
+      overflow: hidden;
+    }
+    .progress-bar {
+      height: 100%;
+      background: #4f46e5;
+      border-radius: 99px;
+      transition: width 0.4s ease;
+      width: 0%;
+    }
+    .progress-label {
+      font-size: 13px;
+      color: #6b7280;
+      margin-bottom: 20px;
+    }
+    .progress-label b { color: #111; }
+
+    /* City table */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th {
+      text-align: left;
+      padding: 9px 12px;
+      background: #f9fafb;
+      border-bottom: 1px solid #e5e7eb;
+      font-weight: 600;
+      color: #374151;
+    }
+    td {
+      padding: 9px 12px;
+      border-bottom: 1px solid #f3f4f6;
+      color: #374151;
+    }
+    tfoot td {
+      background: #f9fafb;
+      font-weight: 700;
+      color: #111;
+      border-top: 2px solid #e5e7eb;
+    }
+    .status-done    { color: #16a34a; font-weight: 600; }
+    .status-failed  { color: #dc2626; font-weight: 600; }
+    .status-retried { color: #d97706; font-weight: 600; }
+
+    /* Summary box */
+    .summary-done {
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 8px;
+      padding: 20px 24px;
+      margin-top: 24px;
+    }
+    .summary-done p { font-size: 14px; color: #166534; margin-bottom: 6px; }
+    .summary-done p:last-of-type { margin-bottom: 16px; }
+    .btn-download {
+      display: inline-block;
+      padding: 10px 24px;
+      background: #16a34a;
+      color: #fff;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .btn-download:hover { background: #15803d; }
+    .summary-failed {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 8px;
+      padding: 20px 24px;
+      margin-top: 24px;
+      color: #991b1b;
+      font-size: 14px;
+    }
+    .failed-list {
+      font-size: 13px;
+      color: #dc2626;
+      margin-top: 8px;
+    }
+    .link-jobs {
+      display: inline-block;
+      margin-top: 14px;
+      font-size: 13px;
+      color: #4f46e5;
+      text-decoration: none;
+    }
+    .link-jobs:hover { text-decoration: underline; }
+    .new-job-btn {
+      display: inline-block;
+      margin-top: 16px;
+      font-size: 14px;
+      color: #4f46e5;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .new-job-btn:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Lead Scraper</h1>
+  <nav>
+    <a href="/jobs">View All Jobs</a>
+    <a href="/logout">Logout</a>
+  </nav>
+</header>
+
+<div class="container">
+
+  <!-- ===================== INPUT FORM ===================== -->
+  <div id="form-section" class="card" {% if job_id %}style="display:none"{% endif %}>
+    <h2>New Scrape Job</h2>
+    <form id="run-form" method="POST" action="/run">
+      <div class="form-row">
+        <label for="query">Business Type</label>
+        <input type="text" id="query" name="query" placeholder='e.g. "botox clinic"' required>
+      </div>
+      <div class="form-row">
+        <label for="cities">Cities (one per line)</label>
+        <textarea id="cities" name="cities" rows="8" placeholder="Houston TX&#10;Austin TX&#10;Dallas TX" required></textarea>
+      </div>
+      <div class="form-row">
+        <label for="max_per_city">Max results per city</label>
+        <input type="number" id="max_per_city" name="max_per_city" value="500" min="1" max="2000">
+      </div>
+      <button type="submit" class="btn-run" id="submit-btn">Run Scraper</button>
+    </form>
+  </div>
+
+  <!-- ===================== JOB VIEW ===================== -->
+  <div id="job-section" {% if not job_id %}style="display:none"{% endif %}>
+    <div class="card">
+      <div class="job-meta">
+        Job ID: <span id="disp-job-id">{{ job_id or '' }}</span>
+        &nbsp;·&nbsp;
+        Query: <span id="disp-query">—</span>
+        &nbsp;·&nbsp;
+        Runtime: <span id="disp-runtime">—</span>
+      </div>
+
+      <div class="progress-wrap">
+        <div class="progress-bar" id="progress-bar"></div>
+      </div>
+      <div class="progress-label" id="progress-label"><b>Starting…</b></div>
+
+      <!-- City table (shown once results arrive) -->
+      <div id="table-wrap" style="display:none; overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>City</th>
+              <th>Leads</th>
+              <th>Duplicates Removed</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="city-tbody"></tbody>
+          <tfoot>
+            <tr>
+              <td>TOTAL</td>
+              <td id="total-leads">0</td>
+              <td id="total-dupes">0</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <!-- Failed cities list -->
+      <div id="failed-list-wrap" style="display:none; margin-top:14px;">
+        <div class="failed-list">
+          <b>Failed cities:</b> <span id="failed-cities-text"></span>
+        </div>
+      </div>
+
+      <!-- Done summary -->
+      <div id="summary-done" class="summary-done" style="display:none;">
+        <p id="summary-raw"></p>
+        <p id="summary-dupes"></p>
+        <p id="summary-unique"></p>
+        <a id="download-link" href="#" class="btn-download">Download CSV</a>
+        <br>
+        <a href="/jobs" class="link-jobs">View All Jobs</a>
+      </div>
+
+      <!-- Failed summary -->
+      <div id="summary-failed" class="summary-failed" style="display:none;">
+        <b>Job failed.</b> <span id="error-msg"></span>
+      </div>
+
+      <a href="/" class="new-job-btn">← Start a new job</a>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const JOB_ID = {{ job_id | tojson }};
+
+  // Submit button: disable while redirecting
+  const runForm = document.getElementById('run-form');
+  if (runForm) {
+    runForm.addEventListener('submit', function() {
+      document.getElementById('submit-btn').disabled = true;
+      document.getElementById('submit-btn').textContent = 'Starting…';
+    });
+  }
+
+  // If we have a job_id, start polling
+  if (JOB_ID) {
+    document.getElementById('job-section').style.display = '';
+    document.getElementById('form-section').style.display = 'none';
+    poll();
+  }
+
+  function poll() {
+    fetch('/status/' + JOB_ID)
+      .then(r => r.json())
+      .then(data => {
+        renderJob(data);
+        if (data.status === 'running') {
+          setTimeout(poll, 5000);
+        }
+      })
+      .catch(() => setTimeout(poll, 8000));
+  }
+
+  function renderJob(data) {
+    // Meta row
+    document.getElementById('disp-query').textContent = data.query || '—';
+    document.getElementById('disp-runtime').textContent = data.runtime || '0h 0m';
+
+    // Progress bar
+    const total = data.cities_submitted || 1;
+    const done  = data.cities_completed || 0;
+    const pct   = Math.round((done / total) * 100);
+    document.getElementById('progress-bar').style.width = pct + '%';
+    document.getElementById('progress-label').innerHTML =
+      '<b>' + (data.progress || '0/' + total + ' cities complete') + '</b>' +
+      '  —  ' + pct + '%';
+
+    // City table
+    const rows = data.per_city_results || [];
+    if (rows.length > 0) {
+      document.getElementById('table-wrap').style.display = '';
+      const tbody = document.getElementById('city-tbody');
+      tbody.innerHTML = '';
+      let totalLeads = 0, totalDupes = 0;
+      rows.forEach(r => {
+        totalLeads += r.leads || 0;
+        totalDupes += r.duplicates_removed || 0;
+        const cls = 'status-' + (r.status || 'done');
+        const label = r.status === 'retried' ? 'Retried ✓' :
+                      r.status === 'failed'  ? 'Failed'    : 'Done';
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${esc(r.city)}</td>
+          <td>${r.leads || 0}</td>
+          <td>${r.duplicates_removed || 0}</td>
+          <td class="${cls}">${label}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+      document.getElementById('total-leads').textContent = totalLeads;
+      document.getElementById('total-dupes').textContent = totalDupes;
+    }
+
+    // Failed cities list
+    const failedCities = data.failed_cities || [];
+    if (failedCities.length > 0) {
+      document.getElementById('failed-list-wrap').style.display = '';
+      document.getElementById('failed-cities-text').textContent = failedCities.join(', ');
+    } else {
+      document.getElementById('failed-list-wrap').style.display = 'none';
+    }
+
+    // Done state
+    if (data.status === 'done') {
+      const raw    = data.total_before_dedup || 0;
+      const unique = data.total_after_dedup  || 0;
+      const dupes  = data.total_duplicates_removed || 0;
+      const cities = data.cities_succeeded || 0;
+      document.getElementById('summary-raw').textContent =
+        raw + ' raw leads scraped across ' + cities + ' cities.';
+      document.getElementById('summary-dupes').textContent =
+        dupes + ' duplicate' + (dupes !== 1 ? 's' : '') + ' removed.';
+      document.getElementById('summary-unique').textContent =
+        unique + ' unique leads in your download.';
+      document.getElementById('download-link').href = '/download/' + JOB_ID;
+      document.getElementById('summary-done').style.display = '';
+    }
+
+    // Failed state
+    if (data.status === 'failed') {
+      document.getElementById('error-msg').textContent = data.error || '';
+      document.getElementById('summary-failed').style.display = '';
+    }
+  }
+
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+</script>
+</body>
+</html>
