@@ -29,7 +29,7 @@
     }
     header nav a:hover { text-decoration: underline; }
 
-    .container { max-width: 1200px; margin: 36px auto; padding: 0 24px; }
+    .container { max-width: 1300px; margin: 36px auto; padding: 0 24px; }
     .card {
       background: #fff;
       border-radius: 10px;
@@ -41,7 +41,6 @@
       border-bottom: 1px solid #e5e7eb;
     }
     .card-header h2 { font-size: 16px; font-weight: 600; color: #374151; }
-
     .empty {
       padding: 48px 24px;
       text-align: center;
@@ -49,7 +48,6 @@
       font-size: 15px;
     }
 
-    /* Table */
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th {
       text-align: left;
@@ -69,6 +67,18 @@
     tr:last-child td { border-bottom: none; }
     tr.clickable { cursor: pointer; }
     tr.clickable:hover td { background: #f9fafb; }
+
+    .query-tag {
+      display: inline-block;
+      background: #ede9fe;
+      color: #4f46e5;
+      border-radius: 4px;
+      padding: 2px 7px;
+      margin: 1px 2px 1px 0;
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
 
     .badge {
       display: inline-block;
@@ -117,8 +127,9 @@
         <thead>
           <tr>
             <th>Started</th>
-            <th>Query</th>
-            <th>Cities Submitted</th>
+            <th>Queries</th>
+            <th>Cities</th>
+            <th>Combinations</th>
             <th>Succeeded</th>
             <th>Failed</th>
             <th>Raw Leads</th>
@@ -141,10 +152,17 @@
             <td style="white-space:nowrap;">
               {{ job.started_at[:16].replace('T', ' ') if job.started_at else '—' }}
             </td>
-            <td><b>{{ job.query }}</b></td>
-            <td style="text-align:right;">{{ job.cities_submitted }}</td>
-            <td style="text-align:right;">{{ job.cities_succeeded }}</td>
-            <td style="text-align:right;">{{ job.cities_failed }}</td>
+            <td>
+              {% for q in job.get('queries', []) %}
+                <span class="query-tag">{{ q }}</span>
+              {% else %}
+                <span style="color:#9ca3af;">—</span>
+              {% endfor %}
+            </td>
+            <td style="text-align:right;">{{ job.cities_submitted or '—' }}</td>
+            <td style="text-align:right;">{{ job.total_combinations or '—' }}</td>
+            <td style="text-align:right;">{{ job.combinations_succeeded or 0 }}</td>
+            <td style="text-align:right;">{{ job.combinations_failed or 0 }}</td>
             <td style="text-align:right;">{{ job.total_before_dedup }}</td>
             <td style="text-align:right;">{{ job.total_after_dedup }}</td>
             <td style="text-align:right;">{{ job.total_duplicates_removed }}</td>

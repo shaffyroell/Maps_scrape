@@ -28,6 +28,10 @@ def _predict_csv_name(query: str, city: str) -> str:
     return f"{_slug(query)}_{_slug(city)}_{date_str}.csv"
 
 
+def _combo_key(query: str, city: str) -> str:
+    return f"{query}||{city}"
+
+
 def _format_runtime(start_time: datetime) -> str:
     elapsed = int((datetime.utcnow() - start_time).total_seconds())
     h = elapsed // 3600
@@ -45,15 +49,14 @@ def _save_jobs(job_store: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Worker (runs in a thread; subprocess does the actual scraping)
+# Worker — one (query, city) combination per call
 # ---------------------------------------------------------------------------
 
-def _process_city(args: tuple) -> dict:
+def _process_combination(args: tuple) -> dict:
     query, city, max_per_city = args
 
     expected_csv = os.path.join(BASE_DIR, _predict_csv_name(query, city))
 
-    # Remove stale CSV to avoid reading previous run's data
     if os.path.exists(expected_csv):
         try:
             os.remove(expected_csv)
@@ -69,21 +72,22 @@ def _process_city(args: tuple) -> dict:
             timeout=300,
         )
 
-        time.sleep(2)  # inter-city rate-limit courtesy
+        time.sleep(2)  # inter-combination rate-limit courtesy
 
         if proc.returncode != 0 or not os.path.exists(expected_csv):
-            return {"city": city, "status": "failed", "leads": 0,
-                    "csv_path": None, "place_ids": []}
+            return {"query": query, "city": city, "status": "failed",
+                    "leads": 0, "csv_path": None, "place_ids": []}
 
         with open(expected_csv, "r", newline="", encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
 
         if not rows:
-            return {"city": city, "status": "failed", "leads": 0,
-                    "csv_path": expected_csv, "place_ids": []}
+            return {"query": query, "city": city, "status": "failed",
+                    "leads": 0, "csv_path": expected_csv, "place_ids": []}
 
         place_ids = [r.get("place_id", "") for r in rows]
         return {
+            "query": query,
             "city": city,
             "status": "done",
             "leads": len(rows),
@@ -92,11 +96,11 @@ def _process_city(args: tuple) -> dict:
         }
 
     except subprocess.TimeoutExpired:
-        return {"city": city, "status": "failed", "leads": 0,
-                "csv_path": None, "place_ids": [], "error": "timeout"}
+        return {"query": query, "city": city, "status": "failed",
+                "leads": 0, "csv_path": None, "place_ids": [], "error": "timeout"}
     except Exception as e:
-        return {"city": city, "status": "failed", "leads": 0,
-                "csv_path": None, "place_ids": [], "error": str(e)}
+        return {"query": query, "city": city, "status": "failed",
+                "leads": 0, "csv_path": None, "place_ids": [], "error": str(e)}
 
 
 # ---------------------------------------------------------------------------
@@ -104,8 +108,7 @@ def _process_city(args: tuple) -> dict:
 # ---------------------------------------------------------------------------
 
 def run_batch(
-    query: str,
-    cities_list: list,
+    combinations: list,       # list of (query, city) tuples
     max_per_city: int,
     job_id: str,
     job_store: dict,
@@ -115,16 +118,18 @@ def run_batch(
     job_dir = os.path.join(OUTPUTS_DIR, job_id)
     os.makedirs(job_dir, exist_ok=True)
 
-    total = len(cities_list)
-    # city -> result dict; preserves latest status per city
-    per_city: dict[str, dict] = {}
+    total = len(combinations)
+    # key: "query||city" → result dict
+    per_combo: dict[str, dict] = {}
     seen_place_ids: set[str] = set()
-    city_csv_paths: dict[str, str] = {}   # city -> moved CSV path
+    combo_csv_paths: dict[str, str] = {}   # combo_key → moved CSV path
     completed_first_pass = 0
 
     # ------------------------------------------------------------------
     def _handle_result(result: dict, is_retry: bool = False) -> None:
+        query = result["query"]
         city = result["city"]
+        key = _combo_key(query, city)
 
         if result["status"] == "done" and result["leads"] > 0:
             place_ids = result.get("place_ids", [])
@@ -136,20 +141,21 @@ def run_batch(
                 dest = os.path.join(job_dir, os.path.basename(csv_src))
                 try:
                     shutil.move(csv_src, dest)
-                    city_csv_paths[city] = dest
+                    combo_csv_paths[key] = dest
                 except OSError:
-                    city_csv_paths[city] = csv_src
+                    combo_csv_paths[key] = csv_src
 
-            per_city[city] = {
+            per_combo[key] = {
+                "query": query,
                 "city": city,
                 "leads": result["leads"],
                 "duplicates_removed": dupes,
                 "status": "retried" if is_retry else "done",
             }
         else:
-            # Only overwrite if not already succeeded (e.g. retry after success)
-            if city not in per_city or per_city[city]["status"] == "failed":
-                per_city[city] = {
+            if key not in per_combo or per_combo[key]["status"] == "failed":
+                per_combo[key] = {
+                    "query": query,
                     "city": city,
                     "leads": 0,
                     "duplicates_removed": 0,
@@ -157,23 +163,30 @@ def run_batch(
                 }
 
     def _update_store(completed_count: int) -> None:
-        results_list = list(per_city.values())
-        # preserve original city order
-        city_index = {c: i for i, c in enumerate(cities_list)}
-        ordered = sorted(results_list, key=lambda r: city_index.get(r["city"], 9999))
+        results_list = list(per_combo.values())
+
+        # Preserve original combination order
+        combo_index = {_combo_key(q, c): i for i, (q, c) in enumerate(combinations)}
+        ordered = sorted(
+            results_list,
+            key=lambda r: combo_index.get(_combo_key(r["query"], r["city"]), 9999),
+        )
 
         succeeded = sum(1 for r in results_list if r["status"] in ("done", "retried"))
         failed = sum(1 for r in results_list if r["status"] == "failed")
-        failed_list = [r["city"] for r in results_list if r["status"] == "failed"]
+        failed_list = [
+            f"{r['query']} / {r['city']}"
+            for r in results_list if r["status"] == "failed"
+        ]
 
         with lock:
             job_store[job_id].update({
-                "cities_completed": completed_count,
-                "cities_succeeded": succeeded,
-                "cities_failed": failed,
-                "failed_cities": failed_list,
+                "combinations_completed": completed_count,
+                "combinations_succeeded": succeeded,
+                "combinations_failed": failed,
+                "failed_combinations": failed_list,
                 "per_city_results": ordered,
-                "progress": f"{completed_count}/{total} cities complete",
+                "progress": f"{completed_count}/{total} combinations complete",
                 "runtime": _format_runtime(start_time),
             })
             _save_jobs(job_store)
@@ -181,57 +194,60 @@ def run_batch(
     # ------------------------------------------------------------------
     # First pass — 4 parallel workers
     # ------------------------------------------------------------------
-    args_list = [(query, city, max_per_city) for city in cities_list]
+    args_list = [(q, c, max_per_city) for q, c in combinations]
 
     with ThreadPoolExecutor(max_workers=4) as executor:
         future_map = {
-            executor.submit(_process_city, args): args[1]
+            executor.submit(_process_combination, args): (args[0], args[1])
             for args in args_list
         }
         for future in as_completed(future_map):
-            city = future_map[future]
+            query, city = future_map[future]
             try:
                 result = future.result()
             except Exception as e:
-                result = {"city": city, "status": "failed", "leads": 0,
-                          "csv_path": None, "place_ids": [], "error": str(e)}
+                result = {"query": query, "city": city, "status": "failed",
+                          "leads": 0, "csv_path": None, "place_ids": [], "error": str(e)}
 
             _handle_result(result, is_retry=False)
             completed_first_pass += 1
             _update_store(completed_first_pass)
 
     # ------------------------------------------------------------------
-    # Retry failed cities once
+    # Retry failed combinations once
     # ------------------------------------------------------------------
-    failed_cities = [city for city, r in per_city.items() if r["status"] == "failed"]
+    failed_combos = [
+        (r["query"], r["city"])
+        for r in per_combo.values() if r["status"] == "failed"
+    ]
 
-    if failed_cities:
-        retry_args = [(query, city, max_per_city) for city in failed_cities]
+    if failed_combos:
+        retry_args = [(q, c, max_per_city) for q, c in failed_combos]
 
         with ThreadPoolExecutor(max_workers=4) as executor:
             future_map = {
-                executor.submit(_process_city, args): args[1]
+                executor.submit(_process_combination, args): (args[0], args[1])
                 for args in retry_args
             }
             for future in as_completed(future_map):
-                city = future_map[future]
+                query, city = future_map[future]
                 try:
                     result = future.result()
                 except Exception as e:
-                    result = {"city": city, "status": "failed", "leads": 0,
-                              "csv_path": None, "place_ids": [], "error": str(e)}
+                    result = {"query": query, "city": city, "status": "failed",
+                              "leads": 0, "csv_path": None, "place_ids": [], "error": str(e)}
 
                 _handle_result(result, is_retry=True)
-                _update_store(completed_first_pass)  # total count stays same during retries
+                _update_store(completed_first_pass)
 
     # ------------------------------------------------------------------
-    # Merge all city CSVs → master file, dedup by place_id
+    # Merge all CSVs → master file, dedup by place_id
     # ------------------------------------------------------------------
     all_rows: list[dict] = []
     seen_merge_ids: set[str] = set()
     total_before_dedup = 0
 
-    for csv_path in city_csv_paths.values():
+    for csv_path in combo_csv_paths.values():
         if os.path.exists(csv_path):
             with open(csv_path, "r", newline="", encoding="utf-8") as f:
                 for row in csv.DictReader(f):
@@ -263,20 +279,26 @@ def run_batch(
     runtime_str = _format_runtime(start_time)
     now = datetime.utcnow().isoformat()
 
-    final_results = list(per_city.values())
-    city_index = {c: i for i, c in enumerate(cities_list)}
-    ordered_final = sorted(final_results, key=lambda r: city_index.get(r["city"], 9999))
+    final_results = list(per_combo.values())
+    combo_index = {_combo_key(q, c): i for i, (q, c) in enumerate(combinations)}
+    ordered_final = sorted(
+        final_results,
+        key=lambda r: combo_index.get(_combo_key(r["query"], r["city"]), 9999),
+    )
     succeeded_final = sum(1 for r in final_results if r["status"] in ("done", "retried"))
     failed_final = sum(1 for r in final_results if r["status"] == "failed")
-    failed_list_final = [r["city"] for r in final_results if r["status"] == "failed"]
+    failed_list_final = [
+        f"{r['query']} / {r['city']}"
+        for r in final_results if r["status"] == "failed"
+    ]
 
     with lock:
         job_store[job_id].update({
             "status": "done",
-            "cities_completed": total,
-            "cities_succeeded": succeeded_final,
-            "cities_failed": failed_final,
-            "failed_cities": failed_list_final,
+            "combinations_completed": total,
+            "combinations_succeeded": succeeded_final,
+            "combinations_failed": failed_final,
+            "failed_combinations": failed_list_final,
             "per_city_results": ordered_final,
             "total_before_dedup": total_before_dedup,
             "total_after_dedup": total_after_dedup,
@@ -284,6 +306,6 @@ def run_batch(
             "download_url": f"/download/{job_id}",
             "completed_at": now,
             "runtime": runtime_str,
-            "progress": f"{total}/{total} cities complete",
+            "progress": f"{total}/{total} combinations complete",
         })
         _save_jobs(job_store)

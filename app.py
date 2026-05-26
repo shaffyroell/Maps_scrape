@@ -106,16 +106,21 @@ def index():
 @app.route("/run", methods=["POST"])
 @login_required
 def run_job():
-    query = request.form.get("query", "").strip()
+    queries_raw = request.form.get("queries", "").strip()
     cities_raw = request.form.get("cities", "").strip()
     try:
         max_per_city = int(request.form.get("max_per_city", 500))
     except ValueError:
         max_per_city = 500
 
+    queries = [q.strip() for q in queries_raw.splitlines() if q.strip()][:10]
     cities_list = [c.strip() for c in cities_raw.splitlines() if c.strip()]
-    if not query or not cities_list:
+
+    if not queries or not cities_list:
         return redirect(url_for("index"))
+
+    # All (query, city) combinations — this is the unit of parallel work
+    combinations = [(q, c) for q in queries for c in cities_list]
 
     job_id = str(uuid.uuid4())
     now = datetime.utcnow().isoformat()
@@ -123,15 +128,17 @@ def run_job():
     with job_store_lock:
         job_store[job_id] = {
             "job_id": job_id,
-            "query": query,
+            "queries": queries,
+            "queries_submitted": len(queries),
             "cities_submitted": len(cities_list),
+            "total_combinations": len(combinations),
             "max_per_city": max_per_city,
             "status": "running",
-            "progress": f"0/{len(cities_list)} cities complete",
-            "cities_completed": 0,
-            "cities_succeeded": 0,
-            "cities_failed": 0,
-            "failed_cities": [],
+            "progress": f"0/{len(combinations)} combinations complete",
+            "combinations_completed": 0,
+            "combinations_succeeded": 0,
+            "combinations_failed": 0,
+            "failed_combinations": [],
             "per_city_results": [],
             "total_before_dedup": 0,
             "total_after_dedup": 0,
@@ -146,7 +153,7 @@ def run_job():
 
     thread = threading.Thread(
         target=_run_batch_safe,
-        args=(query, cities_list, max_per_city, job_id),
+        args=(combinations, max_per_city, job_id),
         daemon=True,
         name=f"job-{job_id[:8]}",
     )
@@ -155,10 +162,10 @@ def run_job():
     return redirect(f"/?job_id={job_id}")
 
 
-def _run_batch_safe(query, cities_list, max_per_city, job_id):
+def _run_batch_safe(combinations, max_per_city, job_id):
     try:
         from batch_runner import run_batch
-        run_batch(query, cities_list, max_per_city, job_id, job_store, job_store_lock)
+        run_batch(combinations, max_per_city, job_id, job_store, job_store_lock)
     except Exception as e:
         with job_store_lock:
             job_store[job_id]["status"] = "failed"
@@ -189,7 +196,9 @@ def download(job_id):
         abort(404)
 
     slug = lambda s: re.sub(r"[^a-z0-9]+", "_", s.lower()).strip("_")
-    download_name = f"{slug(job['query'])}_{job_id[:8]}.csv"
+    queries = job.get("queries", [])
+    label = slug(queries[0]) if queries else "leads"
+    download_name = f"{label}_{job_id[:8]}.csv"
     return send_file(filepath, as_attachment=True, download_name=download_name)
 
 

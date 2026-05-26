@@ -28,7 +28,7 @@
       text-decoration: none;
     }
     header nav a:hover { text-decoration: underline; }
-    .container { max-width: 900px; margin: 36px auto; padding: 0 24px; }
+    .container { max-width: 960px; margin: 36px auto; padding: 0 24px; }
 
     /* ---- Form ---- */
     .card {
@@ -40,7 +40,8 @@
     }
     .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 20px; color: #374151; }
     label { display: block; font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 5px; }
-    input[type="text"], input[type="number"], textarea {
+    .label-hint { font-weight: 400; color: #9ca3af; margin-left: 6px; }
+    input[type="number"], textarea {
       display: block;
       width: 100%;
       padding: 10px 12px;
@@ -51,8 +52,14 @@
       outline: none;
       transition: border-color 0.15s;
     }
-    input[type="text"]:focus, input[type="number"]:focus, textarea:focus { border-color: #4f46e5; }
+    input[type="number"]:focus, textarea:focus { border-color: #4f46e5; }
     textarea { font-family: 'SFMono-Regular', Consolas, monospace; resize: vertical; }
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 18px;
+    }
     .form-row { margin-bottom: 18px; }
     .btn-run {
       padding: 11px 28px;
@@ -67,14 +74,31 @@
     }
     .btn-run:hover { background: #4338ca; }
     .btn-run:disabled { background: #9ca3af; cursor: not-allowed; }
-
-    /* ---- Job view ---- */
-    .job-meta {
+    .combo-info {
       font-size: 13px;
       color: #6b7280;
-      margin-bottom: 20px;
+      margin-top: 10px;
     }
+    #combo-count { font-weight: 700; color: #4f46e5; }
+
+    /* ---- Job view ---- */
+    .job-meta { font-size: 13px; color: #6b7280; margin-bottom: 20px; }
     .job-meta span { font-weight: 600; color: #111; }
+    .queries-list {
+      font-size: 13px;
+      color: #374151;
+      margin-bottom: 14px;
+    }
+    .query-tag {
+      display: inline-block;
+      background: #ede9fe;
+      color: #4f46e5;
+      border-radius: 4px;
+      padding: 2px 8px;
+      margin: 2px 3px 2px 0;
+      font-size: 12px;
+      font-weight: 600;
+    }
 
     /* Progress bar */
     .progress-wrap {
@@ -91,19 +115,11 @@
       transition: width 0.4s ease;
       width: 0%;
     }
-    .progress-label {
-      font-size: 13px;
-      color: #6b7280;
-      margin-bottom: 20px;
-    }
+    .progress-label { font-size: 13px; color: #6b7280; margin-bottom: 20px; }
     .progress-label b { color: #111; }
 
     /* City table */
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-    }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th {
       text-align: left;
       padding: 9px 12px;
@@ -127,7 +143,7 @@
     .status-failed  { color: #dc2626; font-weight: 600; }
     .status-retried { color: #d97706; font-weight: 600; }
 
-    /* Summary box */
+    /* Summary */
     .summary-done {
       background: #f0fdf4;
       border: 1px solid #bbf7d0;
@@ -157,11 +173,7 @@
       color: #991b1b;
       font-size: 14px;
     }
-    .failed-list {
-      font-size: 13px;
-      color: #dc2626;
-      margin-top: 8px;
-    }
+    .failed-list { font-size: 13px; color: #dc2626; margin-top: 8px; }
     .link-jobs {
       display: inline-block;
       margin-top: 14px;
@@ -176,7 +188,6 @@
       font-size: 14px;
       color: #4f46e5;
       text-decoration: none;
-      cursor: pointer;
     }
     .new-job-btn:hover { text-decoration: underline; }
   </style>
@@ -196,19 +207,37 @@
   <div id="form-section" class="card" {% if job_id %}style="display:none"{% endif %}>
     <h2>New Scrape Job</h2>
     <form id="run-form" method="POST" action="/run">
-      <div class="form-row">
-        <label for="query">Business Type</label>
-        <input type="text" id="query" name="query" placeholder='e.g. "botox clinic"' required>
+      <div class="form-grid">
+        <div>
+          <label for="queries">
+            Business Types
+            <span class="label-hint">up to 10, one per line</span>
+          </label>
+          <textarea id="queries" name="queries" rows="6"
+            placeholder="botox clinic&#10;med spa&#10;laser hair removal"
+            required oninput="updateComboCount()"></textarea>
+        </div>
+        <div>
+          <label for="cities">
+            Cities
+            <span class="label-hint">one per line</span>
+          </label>
+          <textarea id="cities" name="cities" rows="6"
+            placeholder="Houston TX&#10;Austin TX&#10;Dallas TX"
+            required oninput="updateComboCount()"></textarea>
+        </div>
       </div>
       <div class="form-row">
-        <label for="cities">Cities (one per line)</label>
-        <textarea id="cities" name="cities" rows="8" placeholder="Houston TX&#10;Austin TX&#10;Dallas TX" required></textarea>
+        <label for="max_per_city">Max results per city / query combination</label>
+        <input type="number" id="max_per_city" name="max_per_city"
+               value="500" min="1" max="2000" style="width:160px;">
       </div>
-      <div class="form-row">
-        <label for="max_per_city">Max results per city</label>
-        <input type="number" id="max_per_city" name="max_per_city" value="500" min="1" max="2000">
+      <div class="combo-info">
+        Total combinations to scrape: <span id="combo-count">0</span>
       </div>
-      <button type="submit" class="btn-run" id="submit-btn">Run Scraper</button>
+      <button type="submit" class="btn-run" id="submit-btn" style="margin-top:18px;">
+        Run Scraper
+      </button>
     </form>
   </div>
 
@@ -218,9 +247,11 @@
       <div class="job-meta">
         Job ID: <span id="disp-job-id">{{ job_id or '' }}</span>
         &nbsp;·&nbsp;
-        Query: <span id="disp-query">—</span>
-        &nbsp;·&nbsp;
         Runtime: <span id="disp-runtime">—</span>
+      </div>
+
+      <div id="queries-wrap" style="margin-bottom:16px;display:none;">
+        <div class="queries-list" id="queries-tags"></div>
       </div>
 
       <div class="progress-wrap">
@@ -228,11 +259,11 @@
       </div>
       <div class="progress-label" id="progress-label"><b>Starting…</b></div>
 
-      <!-- City table (shown once results arrive) -->
       <div id="table-wrap" style="display:none; overflow-x:auto;">
         <table>
           <thead>
             <tr>
+              <th>Query</th>
               <th>City</th>
               <th>Leads</th>
               <th>Duplicates Removed</th>
@@ -242,7 +273,7 @@
           <tbody id="city-tbody"></tbody>
           <tfoot>
             <tr>
-              <td>TOTAL</td>
+              <td colspan="2">TOTAL</td>
               <td id="total-leads">0</td>
               <td id="total-dupes">0</td>
               <td></td>
@@ -251,14 +282,12 @@
         </table>
       </div>
 
-      <!-- Failed cities list -->
       <div id="failed-list-wrap" style="display:none; margin-top:14px;">
         <div class="failed-list">
-          <b>Failed cities:</b> <span id="failed-cities-text"></span>
+          <b>Failed combinations:</b> <span id="failed-combos-text"></span>
         </div>
       </div>
 
-      <!-- Done summary -->
       <div id="summary-done" class="summary-done" style="display:none;">
         <p id="summary-raw"></p>
         <p id="summary-dupes"></p>
@@ -268,7 +297,6 @@
         <a href="/jobs" class="link-jobs">View All Jobs</a>
       </div>
 
-      <!-- Failed summary -->
       <div id="summary-failed" class="summary-failed" style="display:none;">
         <b>Job failed.</b> <span id="error-msg"></span>
       </div>
@@ -282,7 +310,16 @@
 <script>
   const JOB_ID = {{ job_id | tojson }};
 
-  // Submit button: disable while redirecting
+  // Live combo count on form
+  function updateComboCount() {
+    const qs = document.getElementById('queries').value
+      .split('\n').filter(l => l.trim()).slice(0, 10).length;
+    const cs = document.getElementById('cities').value
+      .split('\n').filter(l => l.trim()).length;
+    document.getElementById('combo-count').textContent = qs * cs;
+  }
+  updateComboCount();
+
   const runForm = document.getElementById('run-form');
   if (runForm) {
     runForm.addEventListener('submit', function() {
@@ -291,7 +328,6 @@
     });
   }
 
-  // If we have a job_id, start polling
   if (JOB_ID) {
     document.getElementById('job-section').style.display = '';
     document.getElementById('form-section').style.display = 'none';
@@ -303,28 +339,32 @@
       .then(r => r.json())
       .then(data => {
         renderJob(data);
-        if (data.status === 'running') {
-          setTimeout(poll, 5000);
-        }
+        if (data.status === 'running') setTimeout(poll, 5000);
       })
       .catch(() => setTimeout(poll, 8000));
   }
 
   function renderJob(data) {
-    // Meta row
-    document.getElementById('disp-query').textContent = data.query || '—';
     document.getElementById('disp-runtime').textContent = data.runtime || '0h 0m';
 
-    // Progress bar
-    const total = data.cities_submitted || 1;
-    const done  = data.cities_completed || 0;
+    // Query tags
+    const queries = data.queries || [];
+    if (queries.length) {
+      document.getElementById('queries-wrap').style.display = '';
+      document.getElementById('queries-tags').innerHTML =
+        queries.map(q => `<span class="query-tag">${esc(q)}</span>`).join('');
+    }
+
+    // Progress
+    const total = data.total_combinations || 1;
+    const done  = data.combinations_completed || 0;
     const pct   = Math.round((done / total) * 100);
     document.getElementById('progress-bar').style.width = pct + '%';
     document.getElementById('progress-label').innerHTML =
-      '<b>' + (data.progress || '0/' + total + ' cities complete') + '</b>' +
+      '<b>' + (data.progress || `0/${total} combinations complete`) + '</b>' +
       '  —  ' + pct + '%';
 
-    // City table
+    // Results table
     const rows = data.per_city_results || [];
     if (rows.length > 0) {
       document.getElementById('table-wrap').style.display = '';
@@ -334,11 +374,13 @@
       rows.forEach(r => {
         totalLeads += r.leads || 0;
         totalDupes += r.duplicates_removed || 0;
-        const cls = 'status-' + (r.status || 'done');
-        const label = r.status === 'retried' ? 'Retried ✓' :
-                      r.status === 'failed'  ? 'Failed'    : 'Done';
+        const cls   = 'status-' + (r.status || 'done');
+        const label = r.status === 'retried' ? 'Retried ✓'
+                    : r.status === 'failed'  ? 'Failed'
+                    : 'Done';
         const tr = document.createElement('tr');
         tr.innerHTML = `
+          <td>${esc(r.query || '')}</td>
           <td>${esc(r.city)}</td>
           <td>${r.leads || 0}</td>
           <td>${r.duplicates_removed || 0}</td>
@@ -350,32 +392,33 @@
       document.getElementById('total-dupes').textContent = totalDupes;
     }
 
-    // Failed cities list
-    const failedCities = data.failed_cities || [];
-    if (failedCities.length > 0) {
+    // Failed list
+    const failed = data.failed_combinations || [];
+    if (failed.length > 0) {
       document.getElementById('failed-list-wrap').style.display = '';
-      document.getElementById('failed-cities-text').textContent = failedCities.join(', ');
+      document.getElementById('failed-combos-text').textContent = failed.join(', ');
     } else {
       document.getElementById('failed-list-wrap').style.display = 'none';
     }
 
-    // Done state
+    // Done
     if (data.status === 'done') {
       const raw    = data.total_before_dedup || 0;
       const unique = data.total_after_dedup  || 0;
       const dupes  = data.total_duplicates_removed || 0;
-      const cities = data.cities_succeeded || 0;
+      const succ   = data.combinations_succeeded || 0;
+      const tot    = data.total_combinations || 0;
       document.getElementById('summary-raw').textContent =
-        raw + ' raw leads scraped across ' + cities + ' cities.';
+        `${raw} raw leads scraped across ${succ}/${tot} combinations.`;
       document.getElementById('summary-dupes').textContent =
-        dupes + ' duplicate' + (dupes !== 1 ? 's' : '') + ' removed.';
+        `${dupes} duplicate${dupes !== 1 ? 's' : ''} removed.`;
       document.getElementById('summary-unique').textContent =
-        unique + ' unique leads in your download.';
+        `${unique} unique leads in your download.`;
       document.getElementById('download-link').href = '/download/' + JOB_ID;
       document.getElementById('summary-done').style.display = '';
     }
 
-    // Failed state
+    // Failed
     if (data.status === 'failed') {
       document.getElementById('error-msg').textContent = data.error || '';
       document.getElementById('summary-failed').style.display = '';
