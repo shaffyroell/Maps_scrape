@@ -202,6 +202,30 @@ def download(job_id):
     return send_file(filepath, as_attachment=True, download_name=download_name)
 
 
+@app.route("/delete/<job_id>", methods=["POST"])
+@login_required
+def delete_job(job_id):
+    with job_store_lock:
+        job = job_store.pop(job_id, None)
+        if job:
+            _save_jobs_to_disk()
+
+    if job:
+        # Remove master CSV and per-city CSV directory
+        import shutil
+        master = os.path.join(OUTPUTS_DIR, f"{job_id}_master.csv")
+        job_dir = os.path.join(OUTPUTS_DIR, job_id)
+        try:
+            if os.path.exists(master):
+                os.remove(master)
+            if os.path.isdir(job_dir):
+                shutil.rmtree(job_dir)
+        except Exception:
+            pass
+
+    return jsonify({"ok": True})
+
+
 @app.route("/jobs")
 @login_required
 def jobs():
