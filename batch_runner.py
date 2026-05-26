@@ -11,7 +11,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUTS_DIR = os.path.join(BASE_DIR, "outputs")
-JOBS_FILE = os.path.join(OUTPUTS_DIR, "jobs.json")
 MAPS_LEADS_PATH = os.path.join(BASE_DIR, "maps_leads.py")
 
 
@@ -39,13 +38,7 @@ def _format_runtime(start_time: datetime) -> str:
     return f"{h}h {m}m"
 
 
-def _save_jobs(job_store: dict) -> None:
-    os.makedirs(OUTPUTS_DIR, exist_ok=True)
-    try:
-        with open(JOBS_FILE, "w") as f:
-            json.dump(job_store, f, indent=2, default=str)
-    except Exception:
-        pass
+from storage import save_jobs as _save_jobs
 
 
 # ---------------------------------------------------------------------------

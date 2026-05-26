@@ -15,50 +15,24 @@ app.secret_key = os.environ.get("SECRET_KEY", "change-me-generate-a-32-char-stri
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUTS_DIR = os.path.join(BASE_DIR, "outputs")
-JOBS_FILE = os.path.join(OUTPUTS_DIR, "jobs.json")
 
 job_store: dict = {}
 job_store_lock = threading.Lock()
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _ensure_outputs():
-    os.makedirs(OUTPUTS_DIR, exist_ok=True)
-
-
-def _save_jobs_to_disk():
-    _ensure_outputs()
-    try:
-        with open(JOBS_FILE, "w") as f:
-            json.dump(job_store, f, indent=2, default=str)
-    except Exception:
-        pass
-
-
-def _load_jobs_from_disk() -> dict:
-    _ensure_outputs()
-    if os.path.exists(JOBS_FILE):
-        try:
-            with open(JOBS_FILE, "r") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {}
+from storage import save_jobs as _save_jobs_to_disk, load_jobs as _load_jobs_from_disk
 
 
 # ---------------------------------------------------------------------------
-# Startup: load history and mark stale running jobs as failed
+# Startup: load history and mark stale running/stopping jobs as failed
 # ---------------------------------------------------------------------------
 
 job_store = _load_jobs_from_disk()
 for _jid, _job in job_store.items():
-    if _job.get("status") == "running":
+    if _job.get("status") in ("running", "stopping"):
         _job["status"] = "failed"
         _job["error"] = "Job interrupted by server restart"
-_save_jobs_to_disk()
+        _job.pop("cancel_requested", None)
+_save_jobs_to_disk(job_store)
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +123,7 @@ def run_job():
             "completed_at": None,
             "error": None,
         }
-        _save_jobs_to_disk()
+        _save_jobs_to_disk(job_store)
 
     thread = threading.Thread(
         target=_run_batch_safe,
@@ -170,7 +144,7 @@ def _run_batch_safe(combinations, max_per_city, job_id):
         with job_store_lock:
             job_store[job_id]["status"] = "failed"
             job_store[job_id]["error"] = str(e)
-            _save_jobs_to_disk()
+            _save_jobs_to_disk(job_store)
 
 
 @app.route("/status/<job_id>")
@@ -211,7 +185,7 @@ def cancel_job(job_id):
             return jsonify({"ok": False, "error": "Job not running"}), 400
         job["cancel_requested"] = True
         job["status"] = "stopping"
-        _save_jobs_to_disk()
+        _save_jobs_to_disk(job_store)
     return jsonify({"ok": True})
 
 
@@ -221,7 +195,7 @@ def delete_job(job_id):
     with job_store_lock:
         job = job_store.pop(job_id, None)
         if job:
-            _save_jobs_to_disk()
+            _save_jobs_to_disk(job_store)
 
     if job:
         # Remove master CSV and per-city CSV directory
