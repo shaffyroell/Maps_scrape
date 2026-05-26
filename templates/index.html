@@ -291,6 +291,7 @@
               <th>Leads</th>
               <th>Duplicates Removed</th>
               <th>Status</th>
+              <th>Error</th>
             </tr>
           </thead>
           <tbody id="city-tbody"></tbody>
@@ -429,12 +430,14 @@
                     : r.status === 'failed'  ? 'Failed'
                     : 'Done';
         const tr = document.createElement('tr');
+        const errText = r.status === 'failed' && r.error ? esc(r.error) : '';
         tr.innerHTML = `
           <td>${esc(r.query || '')}</td>
           <td>${esc(r.city)}</td>
           <td>${r.leads || 0}</td>
           <td>${r.duplicates_removed || 0}</td>
           <td class="${cls}">${label}</td>
+          <td style="font-size:11px;color:#dc2626;max-width:300px;word-break:break-word;">${errText}</td>
         `;
         tbody.appendChild(tr);
       });

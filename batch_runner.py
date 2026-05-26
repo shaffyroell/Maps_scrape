@@ -68,8 +68,11 @@ def _process_combination(args: tuple) -> dict:
         time.sleep(2)  # inter-combination rate-limit courtesy
 
         if proc.returncode != 0 or not os.path.exists(expected_csv):
+            error_detail = (proc.stderr or proc.stdout or "").strip()[-400:] or f"exit code {proc.returncode}"
+            print(f"[batch] FAILED {query}/{city}: {error_detail}", flush=True)
             return {"query": query, "city": city, "status": "failed",
-                    "leads": 0, "csv_path": None, "place_ids": []}
+                    "leads": 0, "csv_path": None, "place_ids": [],
+                    "error": error_detail}
 
         with open(expected_csv, "r", newline="", encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
@@ -153,6 +156,7 @@ def run_batch(
                     "leads": 0,
                     "duplicates_removed": 0,
                     "status": "failed",
+                    "error": result.get("error", ""),
                 }
 
     def _is_cancelled() -> bool:
