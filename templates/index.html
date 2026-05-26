@@ -164,6 +164,29 @@
       text-decoration: none;
     }
     .btn-download:hover { background: #15803d; }
+    .btn-stop {
+      padding: 8px 18px;
+      background: none;
+      border: 1px solid #fca5a5;
+      color: #dc2626;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 16px;
+      transition: background 0.15s, color 0.15s;
+    }
+    .btn-stop:hover { background: #dc2626; color: #fff; border-color: #dc2626; }
+    .btn-stop:disabled { opacity: 0.5; cursor: not-allowed; }
+    .summary-cancelled {
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      border-radius: 8px;
+      padding: 20px 24px;
+      margin-top: 24px;
+    }
+    .summary-cancelled p { font-size: 14px; color: #92400e; margin-bottom: 6px; }
+    .summary-cancelled p:last-of-type { margin-bottom: 16px; }
     .summary-failed {
       background: #fef2f2;
       border: 1px solid #fecaca;
@@ -297,6 +320,20 @@
         <a href="/jobs" class="link-jobs">View All Jobs</a>
       </div>
 
+      <button id="stop-btn" class="btn-stop" onclick="stopJob()" style="display:none;">
+        Stop Job
+      </button>
+
+      <div id="summary-cancelled" class="summary-cancelled" style="display:none;">
+        <p id="summary-cancelled-text"></p>
+        <p id="summary-cancelled-unique"></p>
+        <a id="download-link-cancelled" href="#" class="btn-download" style="display:none;">
+          Download Partial CSV
+        </a>
+        <br>
+        <a href="/jobs" class="link-jobs">View All Jobs</a>
+      </div>
+
       <div id="summary-failed" class="summary-failed" style="display:none;">
         <b>Job failed.</b> <span id="error-msg"></span>
       </div>
@@ -339,9 +376,22 @@
       .then(r => r.json())
       .then(data => {
         renderJob(data);
-        if (data.status === 'running') setTimeout(poll, 5000);
+        if (data.status === 'running' || data.status === 'stopping') {
+          setTimeout(poll, 5000);
+        }
       })
       .catch(() => setTimeout(poll, 8000));
+  }
+
+  function stopJob() {
+    const btn = document.getElementById('stop-btn');
+    btn.disabled = true;
+    btn.textContent = 'Stopping…';
+    fetch('/cancel/' + JOB_ID, { method: 'POST' })
+      .catch(() => {
+        btn.disabled = false;
+        btn.textContent = 'Stop Job';
+      });
   }
 
   function renderJob(data) {
@@ -399,6 +449,37 @@
       document.getElementById('failed-combos-text').textContent = failed.join(', ');
     } else {
       document.getElementById('failed-list-wrap').style.display = 'none';
+    }
+
+    // Stop button — visible only while running or stopping
+    const stopBtn = document.getElementById('stop-btn');
+    if (data.status === 'running') {
+      stopBtn.style.display = '';
+      stopBtn.disabled = false;
+      stopBtn.textContent = 'Stop Job';
+    } else if (data.status === 'stopping') {
+      stopBtn.style.display = '';
+      stopBtn.disabled = true;
+      stopBtn.textContent = 'Stopping…';
+    } else {
+      stopBtn.style.display = 'none';
+    }
+
+    // Cancelled
+    if (data.status === 'cancelled') {
+      const done  = data.combinations_completed || 0;
+      const total = data.total_combinations || 0;
+      const unique = data.total_after_dedup || 0;
+      document.getElementById('summary-cancelled-text').textContent =
+        `Job stopped after ${done} of ${total} combinations.`;
+      document.getElementById('summary-cancelled-unique').textContent =
+        unique > 0 ? `${unique} unique leads collected so far.` : 'No leads collected.';
+      if (data.download_url && unique > 0) {
+        const dlBtn = document.getElementById('download-link-cancelled');
+        dlBtn.href = '/download/' + JOB_ID;
+        dlBtn.style.display = '';
+      }
+      document.getElementById('summary-cancelled').style.display = '';
     }
 
     // Done

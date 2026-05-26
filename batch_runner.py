@@ -162,6 +162,10 @@ def run_batch(
                     "status": "failed",
                 }
 
+    def _is_cancelled() -> bool:
+        with lock:
+            return job_store[job_id].get("cancel_requested", False)
+
     def _update_store(completed_count: int) -> None:
         results_list = list(per_combo.values())
 
@@ -196,6 +200,7 @@ def run_batch(
     # ------------------------------------------------------------------
     args_list = [(q, c, max_per_city) for q, c in combinations]
 
+    cancelled = False
     with ThreadPoolExecutor(max_workers=4) as executor:
         future_map = {
             executor.submit(_process_combination, args): (args[0], args[1])
@@ -213,32 +218,45 @@ def run_batch(
             completed_first_pass += 1
             _update_store(completed_first_pass)
 
+            if _is_cancelled():
+                cancelled = True
+                for f in future_map:
+                    f.cancel()
+                break
+
     # ------------------------------------------------------------------
-    # Retry failed combinations once
+    # Retry failed combinations once (skipped if cancelled)
     # ------------------------------------------------------------------
-    failed_combos = [
-        (r["query"], r["city"])
-        for r in per_combo.values() if r["status"] == "failed"
-    ]
+    if not cancelled:
+        failed_combos = [
+            (r["query"], r["city"])
+            for r in per_combo.values() if r["status"] == "failed"
+        ]
 
-    if failed_combos:
-        retry_args = [(q, c, max_per_city) for q, c in failed_combos]
+        if failed_combos:
+            retry_args = [(q, c, max_per_city) for q, c in failed_combos]
 
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            future_map = {
-                executor.submit(_process_combination, args): (args[0], args[1])
-                for args in retry_args
-            }
-            for future in as_completed(future_map):
-                query, city = future_map[future]
-                try:
-                    result = future.result()
-                except Exception as e:
-                    result = {"query": query, "city": city, "status": "failed",
-                              "leads": 0, "csv_path": None, "place_ids": [], "error": str(e)}
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                future_map = {
+                    executor.submit(_process_combination, args): (args[0], args[1])
+                    for args in retry_args
+                }
+                for future in as_completed(future_map):
+                    query, city = future_map[future]
+                    try:
+                        result = future.result()
+                    except Exception as e:
+                        result = {"query": query, "city": city, "status": "failed",
+                                  "leads": 0, "csv_path": None, "place_ids": [], "error": str(e)}
 
-                _handle_result(result, is_retry=True)
-                _update_store(completed_first_pass)
+                    _handle_result(result, is_retry=True)
+                    _update_store(completed_first_pass)
+
+                    if _is_cancelled():
+                        cancelled = True
+                        for f in future_map:
+                            f.cancel()
+                        break
 
     # ------------------------------------------------------------------
     # Merge all CSVs → master file, dedup by place_id
@@ -292,10 +310,17 @@ def run_batch(
         for r in final_results if r["status"] == "failed"
     ]
 
+    final_status = "cancelled" if cancelled else "done"
+    completed_count = completed_first_pass if cancelled else total
+    progress_label = (
+        f"Stopped after {completed_count}/{total} combinations"
+        if cancelled else f"{total}/{total} combinations complete"
+    )
+
     with lock:
         job_store[job_id].update({
-            "status": "done",
-            "combinations_completed": total,
+            "status": final_status,
+            "combinations_completed": completed_count,
             "combinations_succeeded": succeeded_final,
             "combinations_failed": failed_final,
             "failed_combinations": failed_list_final,
@@ -303,9 +328,9 @@ def run_batch(
             "total_before_dedup": total_before_dedup,
             "total_after_dedup": total_after_dedup,
             "total_duplicates_removed": total_dupes,
-            "download_url": f"/download/{job_id}",
+            "download_url": f"/download/{job_id}" if all_rows else None,
             "completed_at": now,
             "runtime": runtime_str,
-            "progress": f"{total}/{total} combinations complete",
+            "progress": progress_label,
         })
         _save_jobs(job_store)

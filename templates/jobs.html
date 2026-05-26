@@ -115,6 +115,19 @@
       transition: background 0.15s, color 0.15s;
     }
     .btn-del:hover { background: #dc2626; color: #fff; border-color: #dc2626; }
+    .btn-stop-sm {
+      padding: 5px 10px;
+      background: none;
+      border: 1px solid #fca5a5;
+      color: #dc2626;
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .btn-stop-sm:hover { background: #dc2626; color: #fff; border-color: #dc2626; }
+    .btn-stop-sm:disabled { opacity: 0.5; cursor: not-allowed; }
   </style>
 </head>
 <body>
@@ -198,7 +211,11 @@
               {% endif %}
             </td>
             <td>
-              {% if job.status != 'running' %}
+              {% if job.status == 'running' %}
+              <button class="btn-stop-sm"
+                onclick="stopJob('{{ job.job_id }}', this)"
+                title="Stop this job">Stop</button>
+              {% else %}
               <button class="btn-del"
                 onclick="deleteJob('{{ job.job_id }}', this)"
                 title="Delete this job">✕</button>
@@ -213,6 +230,16 @@
   </div>
 </div>
 <script>
+  function stopJob(jobId, btn) {
+    if (!confirm('Stop this job? Results collected so far will be saved.')) return;
+    btn.disabled = true;
+    btn.textContent = '…';
+    fetch('/cancel/' + jobId, { method: 'POST' })
+      .then(r => r.json())
+      .then(() => { btn.textContent = 'Stopping'; })
+      .catch(() => { btn.disabled = false; btn.textContent = 'Stop'; });
+  }
+
   function deleteJob(jobId, btn) {
     if (!confirm('Delete this job and its CSV files? This cannot be undone.')) return;
     btn.disabled = true;

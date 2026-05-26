@@ -202,6 +202,19 @@ def download(job_id):
     return send_file(filepath, as_attachment=True, download_name=download_name)
 
 
+@app.route("/cancel/<job_id>", methods=["POST"])
+@login_required
+def cancel_job(job_id):
+    with job_store_lock:
+        job = job_store.get(job_id)
+        if not job or job.get("status") != "running":
+            return jsonify({"ok": False, "error": "Job not running"}), 400
+        job["cancel_requested"] = True
+        job["status"] = "stopping"
+        _save_jobs_to_disk()
+    return jsonify({"ok": True})
+
+
 @app.route("/delete/<job_id>", methods=["POST"])
 @login_required
 def delete_job(job_id):
