@@ -20,14 +20,20 @@ def _upstash_available() -> bool:
 def _upstash_write(payload: str) -> None:
     """Fire-and-forget Upstash write (called from a daemon thread)."""
     try:
-        _http.post(
+        resp = _http.post(
             _UPSTASH_URL,
             headers={"Authorization": f"Bearer {_UPSTASH_TOKEN}"},
             json=["SET", _UPSTASH_KEY, payload],
             timeout=8,
         )
-    except Exception:
-        pass
+        if resp.status_code != 200:
+            import sys
+            print(f"[storage] Upstash write failed: HTTP {resp.status_code} "
+                  f"deny={resp.headers.get('x-deny-reason','?')} body={resp.text[:200]}",
+                  file=sys.stderr)
+    except Exception as e:
+        import sys
+        print(f"[storage] Upstash write exception: {e}", file=sys.stderr)
 
 
 def save_jobs(job_store: dict) -> None:
@@ -54,11 +60,18 @@ def load_jobs() -> dict:
                 json=["GET", _UPSTASH_KEY],
                 timeout=8,
             )
-            result = resp.json().get("result")
-            if result:
-                return json.loads(result)
-        except Exception:
-            pass
+            if resp.status_code == 200:
+                result = resp.json().get("result")
+                if result:
+                    return json.loads(result)
+            else:
+                import sys
+                print(f"[storage] Upstash read failed: HTTP {resp.status_code} "
+                      f"deny={resp.headers.get('x-deny-reason','?')} body={resp.text[:200]}",
+                      file=sys.stderr)
+        except Exception as e:
+            import sys
+            print(f"[storage] Upstash read exception: {e}", file=sys.stderr)
 
     os.makedirs(OUTPUTS_DIR, exist_ok=True)
     if os.path.exists(JOBS_FILE):

@@ -222,5 +222,32 @@ def jobs():
     return render_template("jobs.html", jobs=all_jobs)
 
 
+@app.route("/upstash-test")
+@login_required
+def upstash_test():
+    """Diagnostic endpoint — confirm Upstash Redis is reachable from this server."""
+    import requests as _r
+    url = os.environ.get("UPSTASH_REDIS_REST_URL", "").rstrip("/")
+    token = os.environ.get("UPSTASH_REDIS_REST_TOKEN", "")
+    if not url or not token:
+        return jsonify({"status": "not_configured",
+                        "detail": "UPSTASH_REDIS_REST_URL or UPSTASH_REDIS_REST_TOKEN not set"}), 200
+    try:
+        resp = _r.post(
+            url,
+            headers={"Authorization": f"Bearer {token}"},
+            json=["PING"],
+            timeout=8,
+        )
+        return jsonify({
+            "status": "ok" if resp.status_code == 200 else "error",
+            "http_status": resp.status_code,
+            "response": resp.text[:500],
+            "headers": dict(resp.headers),
+        })
+    except Exception as e:
+        return jsonify({"status": "exception", "detail": str(e)}), 200
+
+
 if __name__ == "__main__":
     app.run(debug=True, use_reloader=False)
